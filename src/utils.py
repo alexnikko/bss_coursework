@@ -66,3 +66,4 @@ if __name__ == '__main__':
     root = '/Users/alexnikko/prog/bss_coursework/datasets/voxceleb/voxceleb1/test/wav'
     male_speakers, female_speakers, sp2files = prepare_dataset_meta(root, id2gender, minimum_duration=3)
     print(len(male_speakers), len(female_speakers), len(sp2files), sep='\n')
+    
