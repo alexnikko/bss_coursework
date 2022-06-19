@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from transforms import Normalizer
 from torchmetrics.functional import (
     signal_noise_ratio,
     signal_distortion_ratio,
@@ -9,6 +8,7 @@ from torchmetrics.functional import (
 )
 from torchmetrics.functional.audio.stoi import short_time_objective_intelligibility as stoi
 from torchmetrics.functional.audio.pesq import perceptual_evaluation_speech_quality as pesq
+from torchmetrics import PermutationInvariantTraining as Pit
 
 from typing import Optional
 
@@ -91,6 +91,7 @@ class Stoi:
 
 if __name__ == '__main__':
     import numpy as np
+    from src.transforms import Normalizer
     x = torch.rand(2, 48_000)
     noise = torch.rand(2, 48_000)
 
