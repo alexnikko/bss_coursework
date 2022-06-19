@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -16,6 +17,11 @@ num_spk = 2
 batch_size = 2
 train_steps = 2 * batch_size
 test_steps = 2 * batch_size
+
+
+def worker_init_fn(worker_id):
+    np.random.seed(torch.initial_seed() % (2 ** 32 - 1))
+
 
 def build_conv_tasnet() -> TasNet:
     model_params = dict(
