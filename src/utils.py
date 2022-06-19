@@ -18,11 +18,11 @@ def read_and_clean_meta(root: str, cache: Optional[str] = None) -> dict[str, str
             meta[col] = meta[col].str.strip()
     meta_vox1['from'] = 'vox1'
     meta_vox2['from'] = 'vox2'
-    meta_vox1.rename(columns={'VoxCeleb1 ID': 'voxceleb_id'})
-    meta_vox2.rename(columns={'VoxCeleb2 ID': 'voxceleb_id'})
+    meta_vox1.rename(columns={'VoxCeleb1 ID': 'voxceleb_id'}, inplace=True)
+    meta_vox2.rename(columns={'VoxCeleb2 ID': 'voxceleb_id'}, inplace=True)
     meta = pd.concat((meta_vox1, meta_vox2)).reset_index()
-    meta.to_csv(os.path.join(root, 'meta.csv'), index=False)
-    id2gender = dict(zip(meta['VoxCeleb1 ID'], meta['Gender']))
+    # meta.to_csv(os.path.join(root, 'meta.csv'), index=False)
+    id2gender = dict(zip(meta['voxceleb_id'], meta['Gender']))
     if cache is not None:
         pd.to_pickle(id2gender, cache)
     return id2gender
