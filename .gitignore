@@ -5,3 +5,4 @@ datasets/
 tmp*
 *__pycache__
 cache/
+train_results/

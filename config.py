@@ -13,6 +13,9 @@ from src.losses import Snr, Sdr, SiSnr, SiSdr, Pit
 SR = 16_000  # noqa
 num_spk = 2
 
+batch_size = 2
+train_steps = 2 * batch_size
+test_steps = 2 * batch_size
 
 def build_conv_tasnet() -> TasNet:
     model_params = dict(
@@ -175,8 +178,6 @@ def build_datasets() -> tuple[VoxcelebDataset, VoxcelebDataset]:
     )
 
     frames = minimum_duration * SR
-    train_steps = 100
-    test_steps = 50
     prob_same = 0.5
     mean_level_db = -26
     std_level_db = 3
@@ -210,7 +211,6 @@ def build_datasets() -> tuple[VoxcelebDataset, VoxcelebDataset]:
 
 
 def build_loaders(train_dataset: VoxcelebDataset, test_dataset: VoxcelebDataset) -> tuple[DataLoader, DataLoader]:
-    batch_size = 1
     num_workers = 4
     pin_memory = torch.cuda.is_available()
     train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers, pin_memory=pin_memory)
@@ -220,7 +220,7 @@ def build_loaders(train_dataset: VoxcelebDataset, test_dataset: VoxcelebDataset)
 
 def build_optimizer(model: nn.Module) -> torch.optim.Optimizer:
     optimizer_params = dict(
-        lr=1e-4
+        lr=1e-3
     )
     optimizer = torch.optim.Adam(model.parameters(), **optimizer_params)
     return optimizer

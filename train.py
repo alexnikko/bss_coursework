@@ -1,92 +1,138 @@
+import numpy as np
 import torch
-from torch.utils.data import DataLoader
 
+import os
+import argparse
+from shutil import rmtree
+from collections import defaultdict
 from tqdm.auto import tqdm
 
-from src.utils import read_and_clean_meta, prepare_dataset_meta
-from src.transforms import Normalizer
-from src.datasets import VoxcelebDataset
-from src.models.conv_tasnet import TasNet
-from src.models.dual_path_rnn import DualRNNmodel
-from src.models.sepformer import SepformerWrapper
-from src.models.sudormrf import SuDORMRF
-from src.losses import Pit, Snr
+from config import build_datasets, build_loaders, build_model,\
+    build_criterion, build_metric_dict, build_optimizer, build_scheduler
 
-if __name__ == '__main__':
-    meta_root = '/Users/alexnikko/prog/bss_coursework/datasets/voxceleb'
-    id2gender = read_and_clean_meta(meta_root)
 
-    root = '/Users/alexnikko/prog/bss_coursework/datasets/voxceleb/voxceleb1/test/wav'
-    minimum_duration = 1  # in seconds
-    male_speakers, female_speakers, sp2files = prepare_dataset_meta(root, id2gender, minimum_duration=minimum_duration)
-
-    SR = 16_000
-    frames = minimum_duration * SR
-    steps = 100
-    prob_same = 0.5
-    mean_level_db = -26
-    std_level_db = 3
-    transform = Normalizer(mean=mean_level_db, std=std_level_db)
-
-    dataset = VoxcelebDataset(
-        root=root,
-        male_speakers=male_speakers,
-        female_speakers=female_speakers,
-        sp2files=sp2files,
-        frames=frames,
-        steps=steps,
-        prob_same=prob_same,
-        transform=transform,
-    )
-
-    batch_size = 1
-    num_workers = 2
-    loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
-    for batch in loader:
-        mix, src = batch
-        print(mix.shape)
-        print(src.shape)
-        break
-    # net = TasNet()
-    # net = DualRNNmodel(256, 64, 128, bidirectional=True, norm='ln', num_layers=6)
-    # net = SepformerWrapper(
-    #     encoder_kernel_size=16,
-    #     encoder_in_nchannels=1,
-    #     encoder_out_nchannels=256,
-    #     masknet_chunksize=250,
-    #     masknet_numlayers=2,
-    #     masknet_norm="ln",
-    #     masknet_useextralinearlayer=False,
-    #     masknet_extraskipconnection=True,
-    #     masknet_numspks=2,
-    #     intra_numlayers=8,
-    #     inter_numlayers=8,
-    #     intra_nhead=8,
-    #     inter_nhead=8,
-    #     intra_dffn=1024,
-    #     inter_dffn=1024,
-    #     intra_use_positional=True,
-    #     inter_use_positional=True,
-    #     intra_norm_before=True,
-    #     inter_norm_before=True,
-    # )
-    net = SuDORMRF(out_channels=128,
-                   in_channels=512,
-                   num_blocks=16,
-                   upsampling_depth=4,
-                   enc_kernel_size=21,
-                   enc_num_basis=512,
-                   num_sources=2)
-    optimizer = torch.optim.Adam(net.parameters(), lr=1e-4)
-    loss_fn = Pit(Snr(20), eval_func='min')
-    losses = []
-    n_steps = 1000
-    mix, src = next(iter(loader))
-    for _ in tqdm(range(n_steps)):
+def train_epoch(model, loader, optimizer, scheduler, loss_fn, metric_dict, device):
+    model.train()
+    metrics = defaultdict(list)
+    for mix, src in tqdm(loader, desc='Training'):
         optimizer.zero_grad()
-        output = net(mix)
-        loss = loss_fn(output, src)
+
+        mix = mix.to(device)
+        src = src.to(device)
+
+        pred = model(mix)
+
+        loss = loss_fn(pred, src)
         loss.backward()
         optimizer.step()
-        losses.append(loss.item())
-        print(losses[-1])
+        if scheduler is not None:
+            scheduler.step()
+
+        metrics['loss'].append(loss.item())
+        with torch.inference_mode():
+            for metric, metric_func in metric_dict.items():
+                values = metric_func(pred, src)
+                value = torch.mean(values)
+                metrics[metric].append(value.item())
+    metrics.update({f'{key}_epoch': np.mean(values) for key, values in metrics.items()})
+    return metrics
+
+
+@torch.inference_mode()
+def test_epoch(model, loader, loss_fn, metric_dict, device):
+    model.eval()
+    metrics = defaultdict(list)
+    for mix, src in tqdm(loader, desc='Testing'):
+        mix = mix.to(device)
+        src = src.to(device)
+
+        pred = model(mix)
+        loss = loss_fn(pred, src)
+
+        metrics['loss'].append(loss.item())
+        for metric, metric_func in metric_dict.items():
+            values = metric_func(pred, src)
+            value = torch.mean(values)
+            metrics[metric].append(value.item())
+    metrics.update({f'{key}_epoch': np.mean(values) for key, values in metrics.items()})
+    return metrics
+
+
+def run(model, train_loader, test_loader, optimizer, scheduler, loss_fn, epochs, metric_dict, device, saveroot):
+    if os.path.exists(saveroot):
+        ans = input(f'{saveroot} is already exists. Do you want to rewrite it? y/n: ')
+        if ans == 'y':
+            rmtree(saveroot)
+        else:
+            exit(1)
+    os.makedirs(saveroot)
+
+    model.to(device)
+    best_loss = float('inf')
+    train_metrics_run = defaultdict(list)
+    test_metrics_run = defaultdict(list)
+    for epoch in tqdm(range(epochs), desc='epochs'):
+        train_metrics = train_epoch(model, train_loader, optimizer, scheduler, loss_fn, metric_dict, device)
+        test_metrics = test_epoch(model, test_loader, loss_fn, metric_dict, device)
+
+        # print metrics
+        print('\n')
+        print(f'Finished epoch #{epoch + 1}')
+        print('TRAIN:')
+        for key, value in train_metrics.items():
+            if 'epoch' in key:
+                print(f'{key} = {value}')
+        print('\nTEST:')
+        for key, value in test_metrics.items():
+            if 'epoch' in key:
+                print(f'{key} = {value}')
+        print('\n')
+
+        # extend run metrics
+        for key, value in train_metrics.items():
+            if isinstance(value, list):
+                train_metrics_run[key].extend(value)
+            else:
+                train_metrics_run[key].append(value)
+        for key, value in test_metrics.items():
+            if isinstance(value, list):
+                test_metrics_run[key].extend(value)
+            else:
+                test_metrics_run[key].append(value)
+
+        # saving last epoch
+        snapshot = {
+            'model': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'train_metrics': train_metrics,
+            'test_metrics': test_metrics
+        }
+        torch.save(snapshot, os.path.join(saveroot, 'last_snapshot.tar'))
+
+        # saving best epoch based on validation loss
+        cur_loss = test_metrics['loss_epoch']
+        if cur_loss < best_loss:  # noqa
+            torch.save(snapshot, os.path.join(saveroot, 'best_snapshot.tar'))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model_name', type=str, required=True)
+    parser.add_argument('--cuda', type=str, required=True)
+    parser.add_argument('--saveroot', type=str, required=True)
+    parser.add_argument('--epochs', type=int, required=True)
+    args = parser.parse_args()
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+
+    train_dataset, test_dataset = build_datasets()
+    train_loader, test_loader = build_loaders(train_dataset, test_dataset)
+    model = build_model(args.model_name)
+    criterion = build_criterion('SI-SNR')
+    optimizer = build_optimizer(model)
+    scheduler = build_scheduler(optimizer, warmup_steps=2 * len(train_loader))
+    metric_dict = build_metric_dict(['SNR', 'SDR', 'SI-SNR', 'SI-SDR'])
+
+    run(model, train_loader, test_loader, optimizer, scheduler, criterion,
+        args.epochs, metric_dict, device, args.saveroot)
