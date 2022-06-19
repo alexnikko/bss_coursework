@@ -177,7 +177,7 @@ def build_datasets() -> tuple[VoxcelebDataset, VoxcelebDataset]:
     )
     test_dataset_meta_cache = '/Users/alexnikko/prog/bss_coursework/cache/test_3s.p'
     test_male_speakers, test_female_speakers, test_sp2files = prepare_dataset_meta(
-        root=train_root,
+        root=test_root,
         id2gender=id2gender,
         minimum_duration=minimum_duration,
         cache=test_dataset_meta_cache
