@@ -4,3 +4,4 @@ datasets/
 .idea/
 tmp*
 *__pycache__
+cache/

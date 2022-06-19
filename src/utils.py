@@ -4,9 +4,12 @@ import os
 from glob import glob
 from tqdm.auto import tqdm
 from collections import defaultdict
+from typing import Optional
 
 
-def read_and_clean_meta(root: str) -> dict[str, str]:
+def read_and_clean_meta(root: str, cache: Optional[str] = None) -> dict[str, str]:
+    if cache is not None and os.path.exists(cache):
+        return pd.read_pickle(cache)
     meta_vox1 = pd.read_csv(os.path.join(root, 'vox1_meta.csv'), sep='\t')
     meta_vox2 = pd.read_csv(os.path.join(root, 'vox2_meta.csv'), sep='\t')
     for meta in [meta_vox1, meta_vox2]:
@@ -20,6 +23,8 @@ def read_and_clean_meta(root: str) -> dict[str, str]:
     meta = pd.concat((meta_vox1, meta_vox2)).reset_index()
     meta.to_csv(os.path.join(root, 'meta.csv'), index=False)
     id2gender = dict(zip(meta['VoxCeleb1 ID'], meta['Gender']))
+    if cache is not None:
+        pd.to_pickle(id2gender, cache)
     return id2gender
 
 
@@ -38,7 +43,10 @@ def get_file_duration_info(root: str, speaker: str, speaker_file: str) -> tuple[
     return filepath, n_frames, duration
 
 
-def prepare_dataset_meta(root: str, id2gender: dict[str, str], minimum_duration: float):
+def prepare_dataset_meta(root: str, id2gender: dict[str, str], minimum_duration: float,
+                         cache: Optional[str] = None):
+    if cache is not None and os.path.exists(cache):
+        return pd.read_pickle(cache)
     speakers = os.listdir(root)
     # because it is macOS
     if '.DS_Store' in speakers:
@@ -57,6 +65,8 @@ def prepare_dataset_meta(root: str, id2gender: dict[str, str], minimum_duration:
             })
     male_speakers = [speaker for speaker in speakers if id2gender[speaker] == 'm']
     female_speakers = [speaker for speaker in speakers if id2gender[speaker] == 'f']
+    if cache is not None:
+        pd.to_pickle((male_speakers, female_speakers, sp2files), cache)
     return male_speakers, female_speakers, sp2files
 
 
