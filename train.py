@@ -31,7 +31,10 @@ def train_epoch(model, loader, optimizer, scheduler, loss_fn, metric_dict, devic
         metrics['loss'].append(loss.item())
         with torch.inference_mode():
             for metric, metric_func in metric_dict.items():
-                values = metric_func(pred, src)
+                if metric == 'SDR':
+                    values = metric_func(pred.cpu(), src.cpu())
+                else:
+                    values = metric_func(pred, src)
                 value = torch.mean(values)
                 metrics[metric].append(value.item())
     metrics.update({f'{key}_epoch': np.mean(values) for key, values in metrics.items()})
@@ -51,7 +54,10 @@ def test_epoch(model, loader, loss_fn, metric_dict, device):
 
         metrics['loss'].append(loss.item())
         for metric, metric_func in metric_dict.items():
-            values = metric_func(pred, src)
+            if metric == 'SDR':
+                values = metric_func(pred.cpu(), src.cpu())
+            else:
+                values = metric_func(pred, src)
             value = torch.mean(values)
             metrics[metric].append(value.item())
     metrics.update({f'{key}_epoch': np.mean(values) for key, values in metrics.items()})
@@ -129,7 +135,7 @@ if __name__ == '__main__':
     train_dataset, test_dataset = build_datasets()
     train_loader, test_loader = build_loaders(train_dataset, test_dataset)
     model = build_model(args.model_name)
-    criterion = build_criterion('SI-SNR')
+    criterion = build_criterion('SI-SNR').to(device)
     optimizer = build_optimizer(model)
     scheduler = build_scheduler(optimizer, warmup_steps=2 * len(train_loader))
     metric_dict = build_metric_dict(['SNR', 'SDR', 'SI-SNR', 'SI-SDR'])
